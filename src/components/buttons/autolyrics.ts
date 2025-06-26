@@ -36,7 +36,7 @@ export default {
     async execute(
         interaction: QuaverInteraction<ButtonInteraction>,
     ): Promise<void> {
-        const { io } = await import('#src/main.js');
+        const io = interaction.client.io;
         if (!confirmationTimeout[interaction.message.id]) {
             await interaction.replyHandler.locale(
                 'DISCORD.INTERACTION.EXPIRED',

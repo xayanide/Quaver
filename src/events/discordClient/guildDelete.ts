@@ -1,11 +1,19 @@
-import type { QuaverClient, QuaverPlayer } from '#src/lib/util/common.d.js';
+import type {
+    QuaverClient,
+    QuaverPlayer,
+    onProcessExit,
+} from '#src/lib/util/common.d.js';
 import { data, logger } from '#src/lib/util/common.js';
-import type { Guild } from 'discord.js';
+import { Events, type Guild } from 'discord.js';
 
 export default {
-    name: 'guildDelete',
-    once: false,
-    async execute(guild: Guild & { client: QuaverClient }): Promise<void> {
+    name: Events.GuildDelete,
+    isOnce: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        guild: Guild & { client: QuaverClient },
+    ): Promise<void> {
         logger.info({
             message: `[G ${guild.id}] Left guild ${guild.name}`,
             label: 'Discord',

@@ -1,5 +1,6 @@
 import type {
     JSONResponse,
+    QuaverClient,
     WhitelistedFeatures,
 } from '#src/lib/util/common.d.js';
 import { settings } from '#src/lib/util/settings.js';
@@ -16,14 +17,14 @@ import type { WebGuild } from './fetchguilds.d.js';
 
 export default {
     name: 'fetchguilds',
-    once: false,
+    isOnce: false,
     async execute(
-        socket: Socket & { guilds: WebGuild[] },
+        socket: Socket & { guilds: WebGuild[]; discordClient: QuaverClient },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         callback: (cb: Record<string, any>) => void,
         token?: string,
     ): Promise<void> {
-        const { bot } = await import('#src/main.js');
+        const bot = socket.discordClient;
         if (socket.guilds) {
             return callback({
                 status: 'success',

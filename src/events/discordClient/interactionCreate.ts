@@ -1,9 +1,13 @@
 import { isAsyncFunction } from 'node:util/types';
 import ReplyHandler from '#src/lib/ReplyHandler.js';
-import type { QuaverInteraction } from '#src/lib/util/common.d.js';
+import type {
+    onProcessExit,
+    QuaverClient,
+    QuaverInteraction,
+} from '#src/lib/util/common.d.js';
 import { logger, MessageOptionsBuilderType } from '#src/lib/util/common.js';
 import { getFailedChecks } from '#src/lib/util/util.js';
-import { PermissionsBitField } from 'discord.js';
+import { Events, PermissionsBitField } from 'discord.js';
 import type {
     AllInteractions,
     CommandInteractions,
@@ -368,14 +372,15 @@ async function onInteractionCreate(
 }
 
 export default {
-    name: 'interactionCreate',
-    once: false,
+    name: Events.InteractionCreate,
+    isOnce: false,
     async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
         interaction: QuaverInteraction<AllInteractions>,
     ): Promise<void> {
-        // Since Quaver from the beginning stores interaction handler maps as properties within the DiscordClient, we'll use DiscordClient as the main storage of the interaction handler maps
-        // Alternatively, interactionHandler maps can be separated from the DiscordClient entirely if we want to but that would involve exporting and importing that to here
-        const interactionHandlerMaps = interaction.client;
+        const interactionHandlerMaps =
+            interaction.client.interactionHandlerMaps;
         const isAnySelectMenu = interaction.isAnySelectMenu();
         const isCommand = interaction.isCommand();
         // To determine the appropriate key to use for the handler stored from the handler map, we diligently check the type of interaction and hard code a string

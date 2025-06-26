@@ -3,12 +3,17 @@ import {
     getGuildLocaleString,
 } from '#src/lib/util/util.js';
 import type { Message } from 'discord.js';
-import { PermissionsBitField } from 'discord.js';
+import { Events, PermissionsBitField } from 'discord.js';
+import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
-    name: 'messageCreate',
-    once: false,
-    async execute(message: Message): Promise<void> {
+    name: Events.MessageCreate,
+    isOnce: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        message: Message,
+    ): Promise<void> {
         if (
             message.mentions.has(message.client.user.id, {
                 ignoreRoles: true,

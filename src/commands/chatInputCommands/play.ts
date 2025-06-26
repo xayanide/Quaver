@@ -69,7 +69,8 @@ export default {
     async execute(
         interaction: QuaverInteraction<ChatInputCommandInteraction>,
     ): Promise<void> {
-        const { bot, io } = await import('#src/main.js');
+        const bot = interaction.client;
+        const io = bot.io;
         if (
             ![
                 ChannelType.GuildText,

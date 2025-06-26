@@ -15,6 +15,7 @@ import type {
     VoiceChannel,
 } from 'discord.js';
 import type { Node, Player } from 'lavaclient';
+import type { Server } from 'socket.io';
 
 export type SearchStateRecord = {
     pages: Song[][];
@@ -55,8 +56,11 @@ export type JSONResponse<T> = { message?: string } & T;
 
 export type QuaverChannels = TextChannel | VoiceChannel | StageChannel;
 
-export type QuaverClient = Client &
-    InteractionHandlerMapsFlat & { music?: Node };
+export type QuaverClient = Client & {
+    interactionHandlerMaps?: InteractionHandlerMapsFlat;
+    io?: Server;
+    music?: Node;
+};
 
 export type QuaverSong = Song & {
     requesterTag?: string;
@@ -89,3 +93,5 @@ export type QuaverPlayerSkipObject = {
 export type QuaverInteraction<T> = T extends AutocompleteInteraction
     ? T & { client: QuaverClient }
     : T & { client: QuaverClient; replyHandler: ReplyHandler };
+
+export type onProcessExit = (eventType: string, err?: Error) => Promise<void>;

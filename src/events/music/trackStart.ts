@@ -1,4 +1,8 @@
-import type { QuaverQueue, QuaverSong } from '#src/lib/util/common.d.js';
+import type {
+    onProcessExit,
+    QuaverQueue,
+    QuaverSong,
+} from '#src/lib/util/common.d.js';
 import { data, logger } from '#src/lib/util/common.js';
 import { settings } from '#src/lib/util/settings.js';
 import {
@@ -17,12 +21,17 @@ import {
     ButtonStyle,
     EmbedBuilder,
 } from 'discord.js';
+import type { QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
     name: 'trackStart',
-    once: false,
-    async execute(queue: QuaverQueue, track: QuaverSong): Promise<void> {
-        const { bot, io } = await import('#src/main.js');
+    isOnce: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        queue: QuaverQueue,
+        track: QuaverSong,
+    ): Promise<void> {
         delete queue.player.skip;
         logger.info({
             message: `[G ${queue.player.id}] Starting track`,
@@ -30,19 +39,17 @@ export default {
         });
         await queue.player.pause(false);
         if (settings.features.web.enabled) {
-            io.to(`guild:${queue.player.id}`).emit(
-                'pauseUpdate',
-                queue.player.paused,
-            );
+            _discordClient.io
+                .to(`guild:${queue.player.id}`)
+                .emit('pauseUpdate', queue.player.paused);
         }
         if (queue.player.timeout) {
             clearTimeout(queue.player.timeout);
             delete queue.player.timeout;
             if (settings.features.web.enabled) {
-                io.to(`guild:${queue.player.id}`).emit(
-                    'timeoutUpdate',
-                    !!queue.player.timeout,
-                );
+                _discordClient.io
+                    .to(`guild:${queue.player.id}`)
+                    .emit('timeoutUpdate', !!queue.player.timeout);
             }
         }
         const duration = msToTime(track.info.length);
@@ -56,10 +63,10 @@ export default {
             );
         }
         if (settings.features.web.enabled) {
-            io.to(`guild:${queue.player.id}`).emit(
+            _discordClient.io.to(`guild:${queue.player.id}`).emit(
                 'queueUpdate',
                 queue.tracks.map((t: QuaverSong): QuaverSong => {
-                    const user = bot.users.cache.get(t.requesterId);
+                    const user = _discordClient.users.cache.get(t.requesterId);
                     t.requesterTag = user?.tag;
                     t.requesterAvatar = user?.avatar;
                     return t;
@@ -236,7 +243,7 @@ export default {
             let json;
             let lyrics: string | Error;
             try {
-                const response = await bot.music.rest.execute({
+                const response = await _discordClient.music.rest.execute({
                     path: `/v4/sessions/${queue.player.api.session.id}/players/${queue.player.id}/lyrics`,
                     method: 'GET',
                 });

@@ -10,7 +10,7 @@ import type { WebUser } from './fetchuser.d.js';
 
 export default {
     name: 'fetchuser',
-    once: false,
+    isOnce: false,
     async execute(
         socket: Socket & { user: APIUser },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

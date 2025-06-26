@@ -1,6 +1,7 @@
 import PlayerHandler, { PlayerResponse } from '#src/lib/PlayerHandler.js';
 import type {
     QuaverChannels,
+    QuaverClient,
     QuaverPlayer,
     QuaverSong,
 } from '#src/lib/util/common.d.js';
@@ -25,16 +26,21 @@ import { LavalinkWSClientState } from 'lavalink-ws-client';
 
 export default {
     name: 'update',
-    once: false,
+    isOnce: false,
     async execute(
-        socket: Socket & { guilds: APIGuild[]; user: APIUser },
+        socket: Socket & {
+            guilds: APIGuild[];
+            user: APIUser;
+            discordClient: QuaverClient;
+        },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         callback: (cb: Record<string, any>) => void,
         guildId: Snowflake,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         item: { type: UpdateItemType; value?: any },
     ): Promise<void> {
-        const { bot, io } = await import('#src/main.js');
+        const bot = socket.discordClient;
+        const io = bot.io;
         if (!socket.guilds) {
             return callback({ status: Response.AuthenticationError });
         }

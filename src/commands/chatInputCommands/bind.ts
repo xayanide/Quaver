@@ -49,7 +49,7 @@ export default {
     async execute(
         interaction: QuaverInteraction<ChatInputCommandInteraction>,
     ): Promise<void> {
-        const { io } = await import('#src/main.js');
+        const io = interaction.client.io;
         const channel = interaction.options.getChannel(
             'new_channel',
         ) as QuaverChannels;

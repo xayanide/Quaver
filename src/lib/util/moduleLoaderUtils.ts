@@ -2,7 +2,6 @@ import * as nodeUrl from 'node:url';
 import * as nodePath from 'node:path';
 import * as nodeUtilTypes from 'node:util/types';
 import * as nodeFsPromises from 'node:fs/promises';
-import type EventEmitter from 'node:events';
 import type {
     ProcessFolderPathOptions,
     LoadInteractionHandlerMapOptions,
@@ -11,6 +10,7 @@ import type {
     ProcessFileOverride,
 } from './moduleLoaderUtils.d.js';
 import type { Dirent } from 'node:fs';
+import type EventEmitter from 'node:events';
 
 const DEFAULT_MODULE_EXPORT_NAME = 'default';
 
@@ -428,4 +428,10 @@ export async function loadEventHandlers(
         isFileConcurrent: userOptions.isFileConcurrent,
         isFolderConcurrent: userOptions.isFolderConcurrent,
     });
+}
+
+// Alternative for getAbsoluteFileURL for the meantime
+export function getDirname(moduleAbsoluteFileUrl: string): string {
+    const fileName = nodeUrl.fileURLToPath(moduleAbsoluteFileUrl);
+    return nodePath.dirname(fileName);
 }

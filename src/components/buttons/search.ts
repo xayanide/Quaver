@@ -58,7 +58,8 @@ export default {
         }
         const target = interaction.customId.split(':')[1];
         if (target === 'add') {
-            const { bot, io } = await import('#src/main.js');
+            const bot = interaction.client;
+            const io = bot.io;
             const tracks = state.selected;
             let player = (await interaction.client.music.players.fetch(
                 interaction.guildId,

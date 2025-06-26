@@ -1,4 +1,5 @@
 import type {
+    QuaverClient,
     QuaverPlayer,
     QuaverSong,
     WhitelistedFeatures,
@@ -15,15 +16,15 @@ import type { Socket } from 'socket.io';
 
 export default {
     name: 'request',
-    once: false,
+    isOnce: false,
     async execute(
-        socket: Socket & { guilds: APIGuild[] },
+        socket: Socket & { guilds: APIGuild[]; discordClient: QuaverClient },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         callback: (cb: Record<string, any>) => void,
         guildId: Snowflake,
         item: 'player' | 'settings',
     ): Promise<void> {
-        const { bot } = await import('#src/main.js');
+        const bot = socket.discordClient;
         if (!socket.guilds) return callback({ status: 'error-auth' });
         if (!socket.guilds.find((guild): boolean => guild.id === guildId)) {
             return callback({ status: 'error-auth' });

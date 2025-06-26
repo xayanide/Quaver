@@ -1,4 +1,8 @@
-import type { QuaverQueue, QuaverSong } from '#src/lib/util/common.d.js';
+import type {
+    onProcessExit,
+    QuaverQueue,
+    QuaverSong,
+} from '#src/lib/util/common.d.js';
 import {
     data,
     logger,
@@ -7,16 +11,18 @@ import {
 import { LoopType } from '@lavaclient/plugin-queue';
 import type { Collection, GuildMember, Snowflake } from 'discord.js';
 import { cleanURIForMarkdown } from '#src/lib/util/util.js';
+import type { QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
     name: 'trackEnd',
-    once: false,
+    isOnce: false,
     async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
         queue: QuaverQueue,
         track: QuaverSong,
         reason: 'cleanup' | 'finished' | 'loadFailed' | 'replaced' | 'stopped',
     ): Promise<void> {
-        const { bot } = await import('#src/main.js');
         delete queue.player.skip;
         if (reason === 'loadFailed') {
             logger.warn({
@@ -75,7 +81,7 @@ export default {
                 }
         }
         if (queue.player.failed) delete queue.player.failed;
-        const members = bot.guilds.cache
+        const members = _discordClient.guilds.cache
             .get(queue.player.id)
             .channels.cache.get(queue.player.voice.channelId)
             .members as Collection<Snowflake, GuildMember>;

@@ -1,19 +1,18 @@
 import { logger } from '#src/lib/util/common.js';
 import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
+import { Events } from 'discord.js';
 
 export default {
-    name: 'error',
+    name: Events.ShardError,
     isOnce: false,
-    async execute(
+    execute(
         _onProcessExit: onProcessExit,
         _discordClient: QuaverClient,
         err: Error,
-    ): Promise<void> {
+    ): void {
         logger.error({
-            message:
-                'An error occurred. Quaver will now shut down to prevent any further issues.',
-            label: 'Lavalink',
+            message: `${err.message}\n${err.stack}`,
+            label: 'Quaver',
         });
-        return _onProcessExit('lavalink', err);
     },
 };

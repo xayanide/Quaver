@@ -9,7 +9,11 @@ import type {
     SettingsPageOptions,
     WhitelistedFeatures,
 } from '#src/lib/util/common.d.js';
-import { data, locales, MessageOptionsBuilderType } from '#src/lib/util/common.js';
+import {
+    data,
+    locales,
+    MessageOptionsBuilderType,
+} from '#src/lib/util/common.js';
 import {
     acceptableSources,
     Check,
@@ -41,7 +45,7 @@ import {
 import { readdirSync } from 'fs';
 import { get } from 'lodash-es';
 import type { LocaleCompletionState, LyricsResponse } from './util.d.js';
-import type { ComponentInteractions } from '#src/events/interactionCreate.d.js';
+import type { ComponentInteractions } from '#src/events/discordClient/interactionCreate.d.js';
 
 /**
  * Returns the localized string.

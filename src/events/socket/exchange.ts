@@ -7,7 +7,7 @@ import type { OAuth2Data } from './exchange.d.js';
 
 export default {
     name: 'exchange',
-    once: false,
+    isOnce: false,
     async execute(
         socket: Socket,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

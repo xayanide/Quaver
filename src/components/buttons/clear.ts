@@ -23,7 +23,7 @@ export default {
     async execute(
         interaction: QuaverInteraction<ButtonInteraction>,
     ): Promise<void> {
-        const { io } = await import('#src/main.js');
+        const io = interaction.client.io;
         const player = (await interaction.client.music.players.fetch(
             interaction.guildId,
         )) as QuaverPlayer;

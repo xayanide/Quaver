@@ -1,16 +1,21 @@
+import type { QuaverClient } from '#src/lib/util/common.d.js';
 import type { APIGuild, Snowflake } from 'discord.js';
 import type { Socket } from 'socket.io';
 
 export default {
     name: 'join',
-    once: false,
+    isOnce: false,
     async execute(
-        socket: Socket & { focused: Snowflake; guilds: APIGuild[] },
+        socket: Socket & {
+            focused: Snowflake;
+            guilds: APIGuild[];
+            discordClient: QuaverClient;
+        },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         callback: (cb: Record<string, any>) => void,
         guildId: Snowflake,
     ): Promise<void> {
-        const { bot } = await import('#src/main.js');
+        const bot = socket.discordClient;
         if (!socket.guilds?.find((guild): boolean => guild.id === guildId)) {
             return callback({ status: 'error-auth' });
         }

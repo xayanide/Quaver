@@ -1,4 +1,4 @@
-import type { QuaverQueue } from '#src/lib/util/common.d.js';
+import type { onProcessExit, QuaverQueue } from '#src/lib/util/common.d.js';
 import {
     data,
     logger,
@@ -6,12 +6,16 @@ import {
 } from '#src/lib/util/common.js';
 import { settings } from '#src/lib/util/settings.js';
 import { getGuildLocaleString } from '#src/lib/util/util.js';
+import type { QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
     name: 'queueFinish',
-    once: false,
-    async execute(queue: QuaverQueue): Promise<void> {
-        const { io } = await import('#src/main.js');
+    isOnce: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        queue: QuaverQueue,
+    ): Promise<void> {
         if (await data.guild.get(queue.player.id, 'settings.stay.enabled')) {
             await queue.player.handler.locale('MUSIC.QUEUE.EMPTY');
             return;
@@ -39,10 +43,9 @@ export default {
         );
         queue.player.timeoutEnd = Date.now() + 30 * 60 * 1000;
         if (settings.features.web.enabled) {
-            io.to(`guild:${queue.player.id}`).emit(
-                'timeoutUpdate',
-                queue.player.timeoutEnd,
-            );
+            _discordClient.io
+                .to(`guild:${queue.player.id}`)
+                .emit('timeoutUpdate', queue.player.timeoutEnd);
         }
         await queue.player.handler.send(
             `${await getGuildLocaleString(

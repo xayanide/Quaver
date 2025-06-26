@@ -17,7 +17,7 @@ import type {
 } from 'discord.js';
 import { MessageFlags, PermissionsBitField } from 'discord.js';
 import type { AdditionalBuilderOptions } from './ReplyHandler.d.js';
-import type { NonSpecialInteractions } from '#src/events/interactionCreate.d.js';
+import type { NonSpecialInteractions } from '#src/events/discordClient/interactionCreate.d.js';
 
 /** Class for handling replies to interactions. */
 export default class ReplyHandler {

@@ -1,4 +1,8 @@
-import type { QuaverClient, QuaverPlayer } from '#src/lib/util/common.d.js';
+import type {
+    onProcessExit,
+    QuaverClient,
+    QuaverPlayer,
+} from '#src/lib/util/common.d.js';
 import {
     MessageOptionsBuilderType,
     data,
@@ -10,6 +14,7 @@ import type { GuildMember, VoiceState } from 'discord.js';
 import {
     ChannelType,
     EmbedBuilder,
+    Events,
     PermissionsBitField,
     StageInstancePrivacyLevel,
 } from 'discord.js';
@@ -183,9 +188,14 @@ async function onChannelJoinOrMove(
 }
 
 export default {
-    name: 'voiceStateUpdate',
-    once: false,
-    async execute(oldState: VoiceState, newState: VoiceState): Promise<void> {
+    name: Events.VoiceStateUpdate,
+    isOnce: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        oldState: VoiceState,
+        newState: VoiceState,
+    ): Promise<void> {
         const oldClient = oldState.client as QuaverClient;
         const oldClientUserId = oldClient.user.id;
         const oldUser = oldState.member.user;
@@ -257,7 +267,7 @@ export default {
             await playerHandler.disconnect(oldChannelId);
             return;
         }
-        const { io } = await import('#src/main.js');
+        const io = oldClient.io;
         // To help Quaver remain unsuppressed in stage channels, explicitly use booleans for Quaver's state update and newState#channelId
         const isQuaverJoinOrMoveState = isOldQuaverStateUpdate && newChannelId;
         const newChannel = newState.channel;

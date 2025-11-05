@@ -25,19 +25,19 @@ const IMPORTABLE_JAVASCRIPT_MODULE_FILE_EXTENSIONS = [
 ];
 
 const DEFAULT_PROCESS_FOLDER_PATHS_OPTIONS = {
-    isFileConcurrent: true,
-    isFolderConcurrent: true,
+    fileConcurrent: true,
+    folderConcurrent: true,
 };
 
 const DEFAULT_LOAD_EVENT_OPTIONS = {
-    isFileConcurrent: true,
-    isFolderConcurrent: true,
+    fileConcurrent: true,
+    folderConcurrent: true,
     listenerPrependedArgs: [] as unknown[],
 };
 
 const DEFAULT_LOAD_HANDLER_MAPS_OPTIONS = {
-    isFileConcurrent: true,
-    isFolderConcurrent: true,
+    fileConcurrent: true,
+    folderConcurrent: true,
 };
 
 /**
@@ -194,8 +194,8 @@ async function executeProcessFileCallback(
  * @returns {Promise<void>} A promise that resolves when all files within the provided folder paths have been processed.
  *
  * The function supports concurrent processing of files and folders based on the provided options:
- * - `isFileConcurrent`: If `true` and `processFileCallback` is asynchronous, files within a folder are processed concurrently.
- * - `isFolderConcurrent`: If `true`, multiple folders are processed concurrently.
+ * - `fileConcurrent`: If `true` and `processFileCallback` is asynchronous, files within a folder are processed concurrently.
+ * - `folderConcurrent`: If `true`, multiple folders are processed concurrently.
  *
  * Execution flow:
  * 1. Merges user-provided options with defaults.
@@ -240,7 +240,7 @@ export async function processFolderPaths(
             );
             return;
         }
-        if (userOptions.isFileConcurrent && isProcessFileCallbackAsync) {
+        if (userOptions.fileConcurrent && isProcessFileCallbackAsync) {
             await Promise.all(
                 files.map(async (file): Promise<void> => {
                     return processFileCallback(file, folderPath);
@@ -269,7 +269,7 @@ export async function processFolderPaths(
     if (typeof folderPaths === 'string') {
         return;
     }
-    if (userOptions.isFolderConcurrent) {
+    if (userOptions.folderConcurrent) {
         await Promise.all(folderPaths.map(processFolderPath));
         return;
     }
@@ -350,8 +350,8 @@ export async function loadInteractionHandlerMaps(
     }
     const processFileCallback = processFileOverride || processFile;
     await processFolderPaths(folderPaths, processFileCallback, {
-        isFileConcurrent: userOptions.isFileConcurrent,
-        isFolderConcurrent: userOptions.isFolderConcurrent,
+        fileConcurrent: userOptions.fileConcurrent,
+        folderConcurrent: userOptions.folderConcurrent,
     });
 }
 
@@ -425,7 +425,13 @@ export async function loadEventHandlers(
     }
     const processFileCallback = processFileOverride || processFile;
     await processFolderPaths(folderPaths, processFileCallback, {
-        isFileConcurrent: userOptions.isFileConcurrent,
-        isFolderConcurrent: userOptions.isFolderConcurrent,
+        fileConcurrent: userOptions.fileConcurrent,
+        folderConcurrent: userOptions.folderConcurrent,
     });
+}
+
+// as an alternative for getAbsoluteFileURL()
+export function getDirname(moduleAbsoluteFileUrl: string): string {
+    const fileName = nodeUrl.fileURLToPath(moduleAbsoluteFileUrl);
+    return nodePath.dirname(fileName);
 }

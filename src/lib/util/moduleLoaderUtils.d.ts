@@ -1,18 +1,18 @@
 import type { Dirent } from 'node:fs';
 
 export interface ProcessFolderPathOptions {
-    isFileConcurrent?: boolean;
-    isFolderConcurrent?: boolean;
+    fileConcurrent?: boolean;
+    folderConcurrent?: boolean;
 }
 
 export interface LoadInteractionHandlerMapOptions {
-    isFileConcurrent?: boolean;
-    isFolderConcurrent?: boolean;
+    fileConcurrent?: boolean;
+    folderConcurrent?: boolean;
 }
 
 export interface LoadEventHandlerOptions {
-    isFileConcurrent?: boolean;
-    isFolderConcurrent?: boolean;
+    fileConcurrent?: boolean;
+    folderConcurrent?: boolean;
     listenerPrependedArgs?: unknown[];
 }
 

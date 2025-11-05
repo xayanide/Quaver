@@ -32,7 +32,6 @@ import type {
     PermissionsBitField,
     PermissionsString,
 } from 'discord.js';
-import type { AllInteractions } from './interactionTypes.js';
 import type { Check } from './lib/util/constants.js';
 
 export type SpecialInteractions = AutocompleteInteraction<'cached'>;

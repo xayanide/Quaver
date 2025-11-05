@@ -265,10 +265,6 @@ export async function processFolderPaths(
         await processFolderPath(folderPath);
         return;
     }
-    // Created a gaurd clause because TypeScript couldn't infer that the paths get transformed to an array
-    if (typeof folderPaths === 'string') {
-        return;
-    }
     if (userOptions.folderConcurrent) {
         await Promise.all(folderPaths.map(processFolderPath));
         return;
@@ -404,7 +400,12 @@ export async function loadEventHandlers(
         if (!moduleExport) {
             return;
         }
-        const { name, execute, isOnce, isPrepend } = moduleExport;
+        const {
+            name,
+            execute,
+            once: isOnce,
+            prepend: isPrepend,
+        } = moduleExport;
         const listener = getAsyncAwareListener(
             execute,
             userOptions.listenerPrependedArgs,
@@ -430,7 +431,7 @@ export async function loadEventHandlers(
     });
 }
 
-// as an alternative for getAbsoluteFileURL()
+// as a simpler alternative to getAbsoluteFileURL()
 export function getDirname(moduleAbsoluteFileUrl: string): string {
     const fileName = nodeUrl.fileURLToPath(moduleAbsoluteFileUrl);
     return nodePath.dirname(fileName);

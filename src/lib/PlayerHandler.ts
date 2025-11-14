@@ -183,7 +183,7 @@ export default class PlayerHandler {
      * @returns Whether or not the feature was enabled.
      */
     async stay(enabled: boolean): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (!settings.features.stay.enabled) {
             return PlayerResponse.FeatureDisabled;
         }
@@ -268,7 +268,7 @@ export default class PlayerHandler {
      * @returns Whether or not the feature was enabled.
      */
     async bassboost(enabled: boolean): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         const response = await this.player.effects.toggle(effects.bassboost);
         if (response !== enabled) {
             await this.player.effects.toggle(effects.bassboost);
@@ -289,7 +289,7 @@ export default class PlayerHandler {
      * @returns Whether or not the player was bound.
      */
     async bind(channel: QuaverChannels): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (
             !channel
                 .permissionsFor(this.client.user.id)
@@ -324,7 +324,7 @@ export default class PlayerHandler {
      * @returns Whether or not the queue was cleared.
      */
     async clear(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (this.player.queue.tracks.length === 0) {
             return PlayerResponse.QueueInsufficientTracks;
         }
@@ -341,7 +341,7 @@ export default class PlayerHandler {
      * @returns Whether or not the player was disconnected.
      */
     async disconnect(channelId?: Snowflake): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (await data.guild.get(this.player.id, 'settings.stay.enabled')) {
             return PlayerResponse.FeatureConflict;
         }
@@ -405,7 +405,7 @@ export default class PlayerHandler {
      * @returns Whether or not the looping mode was changed.
      */
     async loop(type: LoopType): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         this.player.queue.setLoop(type);
         if (settings.features.web.enabled) {
             io.to(`guild:${this.player.id}`).emit('loopUpdate', type);
@@ -423,7 +423,7 @@ export default class PlayerHandler {
         oldPosition: number,
         newPosition: number,
     ): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (this.player.queue.tracks.length <= 1) {
             return PlayerResponse.QueueInsufficientTracks;
         }
@@ -464,7 +464,7 @@ export default class PlayerHandler {
      * @returns Whether or not the feature was enabled.
      */
     async nightcore(enabled: boolean): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         const response = await this.player.effects.toggle(effects.nightcore);
         if (response !== enabled) {
             await this.player.effects.toggle(effects.nightcore);
@@ -484,7 +484,7 @@ export default class PlayerHandler {
      * @returns Whether or not the player was paused.
      */
     async pause(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (this.player.paused) {
             return PlayerResponse.PlayerStateUnchanged;
         }
@@ -504,7 +504,7 @@ export default class PlayerHandler {
      * @returns Whether or not the track was removed.
      */
     async remove(position: number): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (this.player.queue.tracks.length === 0) {
             return PlayerResponse.QueueInsufficientTracks;
         }
@@ -536,7 +536,7 @@ export default class PlayerHandler {
      * @returns Whether or not the player was resumed.
      */
     async resume(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (!this.player.paused) {
             return PlayerResponse.PlayerStateUnchanged;
         }
@@ -580,7 +580,7 @@ export default class PlayerHandler {
      * @returns Whether or not the queue was shuffled.
      */
     async shuffle(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (this.player.queue.tracks.length <= 1) {
             return PlayerResponse.QueueInsufficientTracks;
         }
@@ -621,7 +621,7 @@ export default class PlayerHandler {
      * @returns Whether or not the queue was sorted.
      */
     async sort(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (!settings.features.smartqueue.enabled) {
             return PlayerResponse.FeatureDisabled;
         }
@@ -692,7 +692,7 @@ export default class PlayerHandler {
      * @returns Whether or not the player was stopped.
      */
     async stop(): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (
             !this.player.queue.current ||
             (!this.player.playing && !this.player.paused)
@@ -714,7 +714,7 @@ export default class PlayerHandler {
      * @returns Whether or not the volume was set.
      */
     async volume(volume: number): Promise<PlayerResponse> {
-        const { io } = await import('#src/main.js');
+        const { io } = this.client;
         if (volume < 0 || volume > 200) {
             return PlayerResponse.InputOutOfRange;
         }

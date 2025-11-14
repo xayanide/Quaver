@@ -1,13 +1,18 @@
+import * as nodeFs from 'node:fs';
+import * as nodeFsPromises from 'node:fs/promises';
+import * as nodeHttp from 'node:http';
+import * as nodeHttps from 'node:https';
+import * as nodePath from 'node:path';
+import * as nodeReadline from 'node:readline';
 import type {
     QuaverClient,
     QuaverPlayer,
-    WhitelistedFeatures,
+    QuaverAppStatus,
 } from '#src/lib/util/common.d.js';
 import {
     data,
     logger,
     MessageOptionsBuilderType,
-    setLocales,
 } from '#src/lib/util/common.js';
 import { settings } from '#src/lib/util/settings.js';
 import {
@@ -16,84 +21,181 @@ import {
     updateQueryOverrides,
     updateSourceManagers,
 } from '#src/lib/util/util.js';
-import { load as effectsLoad } from '@lavaclient/plugin-effects';
-import { load as queueLoad } from '@lavaclient/plugin-queue';
-import {
-    getAbsoluteFileURL,
-    msToTime,
-    msToTimeString,
-    parseTimeString,
-} from '@zptxdev/zptx-lib';
+import { load as loadLavaclientPluginEffects } from '@lavaclient/plugin-effects';
+import { load as loadLavaclientPluginQueue } from '@lavaclient/plugin-queue';
+import { getAbsoluteFileURL } from '@zptxdev/zptx-lib';
 import {
     AttachmentBuilder,
     Client,
     Collection,
     ContainerBuilder,
     FileBuilder,
-    GatewayDispatchEvents,
     GatewayIntentBits,
     SeparatorBuilder,
     TextDisplayBuilder,
 } from 'discord.js';
 import type { Express } from 'express';
 import express from 'express';
-import { readdirSync, readFileSync } from 'fs';
-import { writeFile } from 'fs/promises';
-import * as http from 'http';
-import * as https from 'https';
-import type { ClientEvents } from 'lavaclient';
 import { Node } from 'lavaclient';
-import { createInterface } from 'readline';
-import type { Socket } from 'socket.io';
 import { Server } from 'socket.io';
-import { inspect } from 'util';
 import { version } from './lib/util/version.js';
-import type { QuaverEvent, QuaverMusicEvent } from './main.d.js';
-import type {
-    AutocompleteHandler,
-    ChatInputCommandHandler,
-    ComponentTypeHandler,
-} from './events/interactionCreate.d.js';
-import yoctoSpinner from 'yocto-spinner';
+import type { InteractionHandlerMapsFlat } from './events/discordClient/interactionCreate.d.js';
+import createYoctoSpinner from 'yocto-spinner';
 import colors from 'yoctocolors';
+import {
+    loadAllEventHandlers,
+    getDirname,
+    loadEventHandlers,
+} from './lib/util/moduleLoaderUtils.js';
+import type EventEmitter from 'node:events';
+import type Keyv from 'keyv';
 
-export const startup = { started: false, startTime: Date.now() };
+const NORMAL_PROCESS_EXIT_EVENTS = ['exit', 'SIGINT', 'SIGTERM'];
+const EXCLUDE_EVENT_HANDLERS = ['nodeProcess', 'keyv', 'readlineInterface'];
+const TRACK_UPDATE_INTERVAL = 500;
+
+const appStatus: QuaverAppStatus = {
+    startTime: Date.now(),
+    isReady: false,
+    isExiting: false,
+};
+
+const dirname = getDirname(import.meta.url);
+
 logger.info({
     message: `Starting ${colors.magenta(`Quaver ${version}`)}...`,
     label: 'Quaver',
 });
 
-const spinner = yoctoSpinner();
+const eventHandlersPath = nodePath.join(dirname, 'events');
+const nodeProcessEventsPath = nodePath.join(eventHandlersPath, 'nodeProcess');
+const keyvEventsPath = nodePath.join(eventHandlersPath, 'keyv');
+const readlineInterfaceEventsPath = nodePath.join(
+    eventHandlersPath,
+    'readlineInterface',
+);
 
-spinner.start(`Loading ${colors.cyan('lavaclient plugins')}`);
-effectsLoad();
-queueLoad();
+const spinner = createYoctoSpinner();
+
+/**
+ * Listen to the process and keyv events first for the process to be able to catch potential errors
+ * on the operations that follow it as early as possible.
+ */
+spinner.start(`Loading eventHandlers: ${colors.cyan('nodeProcess')}`);
+await loadEventHandlers(nodeProcessEventsPath, process, {
+    listenerPrependedArgs: [onProcessExit],
+});
 spinner.success();
 
-let app: Express, server;
-if (settings.features.web.enabled) {
+spinner.start(`Loading eventHandlers: ${colors.cyan('keyv')}`);
+await loadEventHandlers(
+    keyvEventsPath,
+    data.guild.instance as Keyv & EventEmitter,
+    {
+        listenerPrependedArgs: [onProcessExit],
+    },
+);
+spinner.success();
+
+spinner.start(`Setting up: ${colors.cyan('readlineInterface')}`);
+const readlineInterface = nodeReadline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+});
+spinner.success();
+
+spinner.start(`Setting up: ${colors.cyan('discordClient')}`);
+const discordClient: QuaverClient = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+    ],
+});
+const interactionHandlerMaps: InteractionHandlerMapsFlat = {
+    autocompletes: new Collection(),
+    buttons: new Collection(),
+    channelSelectMenus: new Collection(),
+    chatInputCommands: new Collection(),
+    mentionableSelectMenus: new Collection(),
+    messageContextMenuCommands: new Collection(),
+    modalSubmits: new Collection(),
+    roleSelectMenus: new Collection(),
+    stringSelectMenus: new Collection(),
+    userContextMenuCommands: new Collection(),
+    userSelectMenus: new Collection(),
+};
+discordClient.interactionHandlerMaps = interactionHandlerMaps;
+discordClient.appStatus = appStatus;
+spinner.success();
+
+spinner.start(`Loading plugins: ${colors.cyan('lavaclient')}`);
+loadLavaclientPluginEffects();
+loadLavaclientPluginQueue();
+spinner.success();
+
+spinner.start(`Setting up: ${colors.cyan('lavaclientNode')}`);
+const lavaclientNode = new Node({
+    info: {
+        host: settings.lavalink.host,
+        port: settings.lavalink.port,
+        auth: settings.lavalink.password,
+        tls: !!settings.lavalink.secure,
+    },
+    ws: {
+        reconnecting: {
+            delay: settings.lavalink.reconnect.delay ?? 3000,
+            tries: settings.lavalink.reconnect.tries ?? 5,
+        },
+    },
+    discord: {
+        sendGatewayCommand: (guildId, gatewayData): void =>
+            discordClient.guilds.cache.get(guildId)?.shard?.send(gatewayData),
+    },
+});
+discordClient.music = lavaclientNode;
+spinner.success();
+
+function createHttpsServer(app: Express): nodeHttps.Server {
+    const keyPath = getAbsoluteFileURL(import.meta.url, [
+        '..',
+        ...settings.features.web.https.key.split('/'),
+    ]);
+    const certPath = getAbsoluteFileURL(import.meta.url, [
+        '..',
+        ...settings.features.web.https.cert.split('/'),
+    ]);
+    const options = {
+        key: nodeFs.readFileSync(keyPath),
+        cert: nodeFs.readFileSync(certPath),
+    };
+    return nodeHttps.createServer(options, app);
+}
+
+function createIoServer(): Server | undefined {
+    if (!settings.features.web.enabled) {
+        return;
+    }
     logger.info({
-        message: `Web integration is ${colors.green('enabled')}. For more information, visit ${colors.underline(colors.cyan('https://github.com/ZPTXDev/Quaver-Web'))}.`,
+        message: `Web integration is ${colors.green('enabled')}. For more information, visit ${colors.underline(colors.cyan('https://github.com/ZPTXDev/Quaver-Web'))}`,
         label: 'Quaver',
     });
-    spinner.start(`Starting ${colors.cyan('web server')}`);
-    app = express();
+    spinner.start(`Setting up: ${colors.cyan('ioServer')}`);
+    const app = express();
     if (settings.grafanaLogging) {
         logger.info({
             message: `Grafana logging is ${colors.green('enabled')}. Statistics will be accessible through the /stats endpoint.`,
             label: 'Quaver',
         });
-        app.get('/stats', async (req, res): Promise<void> => {
-            const totalSessions = bot.music?.players?.cache.size;
-            const activeSessions = Array.from(
-                bot.music?.players?.cache.values(),
-            ).filter(
+        app.get('/stats', async (_req, res): Promise<void> => {
+            const playersCache = lavaclientNode.players.cache;
+            const totalSessions = playersCache.size;
+            const players = Array.from(playersCache.values());
+            const activeSessions = players.filter(
                 (player: QuaverPlayer): boolean =>
                     !player.timeout && !player.pauseTimeout,
             ).length;
-            const totalQueued = Array.from(
-                bot.music?.players?.cache.values(),
-            ).reduce(
+            const totalQueued = players.reduce(
                 (total: number, player: QuaverPlayer): number =>
                     total + player.queue?.tracks.length,
                 0,
@@ -112,140 +214,45 @@ if (settings.features.web.enabled) {
                     quaver: version,
                 },
                 cache: {
-                    guilds: bot.guilds.cache.size,
-                    users: bot.users.cache.size,
+                    guilds: discordClient.guilds.cache.size,
+                    users: discordClient.users.cache.size,
                 },
                 memory: process.memoryUsage(),
             });
         });
     }
-    if (settings.features.web.https.enabled) {
-        server = https.createServer(
-            {
-                key: readFileSync(
-                    getAbsoluteFileURL(import.meta.url, [
-                        '..',
-                        ...settings.features.web.https.key.split('/'),
-                    ]),
-                ),
-                cert: readFileSync(
-                    getAbsoluteFileURL(import.meta.url, [
-                        '..',
-                        ...settings.features.web.https.cert.split('/'),
-                    ]),
-                ),
-            },
-            app,
-        );
-    } else {
-        server = http.createServer(app);
-    }
+    const isWebHttpsEnabled = settings.features.web.https.enabled;
+    const server = isWebHttpsEnabled
+        ? createHttpsServer(app)
+        : nodeHttp.createServer(app);
     server.listen(settings.features.web.port);
-    spinner.success();
-}
-
-if (settings.features.web.enabled) {
-    spinner.start(`Setting up ${colors.cyan('websocket server')}`);
-}
-export const io = settings.features.web.enabled
-    ? new Server(server, {
-          cors: { origin: settings.features.web.allowedOrigins },
-      })
-    : undefined;
-if (io) {
-    spinner.success();
-    spinner.start(`Loading ${colors.cyan('websocket events')}`);
-    io.on('connection', async (socket): Promise<void> => {
-        const webEventFiles = readdirSync(
-            getAbsoluteFileURL(import.meta.url, ['events', 'web']),
-        ).filter(
-            (file): boolean => file.endsWith('.js') || file.endsWith('.ts'),
-        );
-        for await (const file of webEventFiles) {
-            const event: {
-                default: {
-                    name: string;
-                    once: boolean;
-                    execute(
-                        socket: Socket,
-                        callback: () => void,
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        ...args: any[]
-                    ): void | Promise<void>;
-                };
-            } = await import(
-                getAbsoluteFileURL(import.meta.url, [
-                    'events',
-                    'web',
-                    file,
-                ]).toString()
-            );
-            if (event.default.once) {
-                socket.once(
-                    event.default.name,
-                    (args, callback): void | Promise<void> =>
-                        event.default.execute(socket, callback, ...args),
-                );
-            } else {
-                socket.on(
-                    event.default.name,
-                    (args, callback): void | Promise<void> =>
-                        event.default.execute(socket, callback, ...args),
-                );
-            }
-        }
+    const ioServer = new Server(server, {
+        cors: { origin: settings.features.web.allowedOrigins },
     });
     spinner.success();
+    return ioServer;
 }
 
-data.guild.instance.on('error', async (err: Error): Promise<void> => {
-    logger.error({ message: 'Failed to connect to database.', label: 'Keyv' });
-    await shuttingDown('keyv', err);
-});
+function startPeriodicTrackUpdates(): void {
+    if (!settings.features.web.enabled) {
+        return;
+    }
+    setInterval(
+        (): boolean => discordClient.emit('timer'),
+        TRACK_UPDATE_INTERVAL,
+    );
+}
 
-spinner.start(`Setting up ${colors.cyan('Discord client')}`);
-export const bot: QuaverClient = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessages,
-    ],
-});
-bot.chatInputCommands = new Collection();
-bot.autocompletes = new Collection();
-spinner.success();
+const io = createIoServer();
+discordClient.io = io;
 
-spinner.start(`Connecting to ${colors.cyan('Lavalink server')}`);
-bot.music = new Node({
-    info: {
-        host: settings.lavalink.host,
-        port: settings.lavalink.port,
-        auth: settings.lavalink.password,
-        tls: !!settings.lavalink.secure,
-    },
-    ws: {
-        reconnecting: {
-            delay: settings.lavalink.reconnect.delay ?? 3000,
-            tries: settings.lavalink.reconnect.tries ?? 5,
-        },
-    },
-    discord: {
-        sendGatewayCommand: (id, payload): void =>
-            bot.guilds.cache.get(id)?.shard?.send(payload),
-    },
+const coreArgs = [onProcessExit, discordClient];
+
+spinner.start(`Loading eventHandlers: ${colors.cyan('readlineInterface')}`);
+await loadEventHandlers(readlineInterfaceEventsPath, readlineInterface, {
+    listenerPrependedArgs: coreArgs,
 });
 spinner.success();
-
-bot.ws.on(
-    GatewayDispatchEvents.VoiceServerUpdate,
-    async (payload): Promise<boolean> =>
-        bot.music.players.handleVoiceUpdate(payload),
-);
-bot.ws.on(
-    GatewayDispatchEvents.VoiceStateUpdate,
-    async (payload): Promise<boolean> =>
-        bot.music.players.handleVoiceUpdate(payload),
-);
 
 spinner.start(`Verifying ${colors.cyan('Lavalink plugins and sources')}`);
 const requiredPlugins = [
@@ -254,7 +261,7 @@ const requiredPlugins = [
     'youtube-plugin',
     'java-lyrics-plugin',
 ];
-const info = await bot.music.api.info();
+const info = await lavaclientNode.api.info();
 if (
     info.plugins.length === 0 ||
     !info.plugins
@@ -302,446 +309,243 @@ updateSourceManagers(info.sourceManagers);
 updateAcceptableSources(acceptableSources);
 spinner.success();
 
-const rl = createInterface({ input: process.stdin, output: process.stdout });
-rl.on('line', async (input): Promise<void> => {
-    const command = input.split(' ')[0].toLowerCase();
-    if (['sessions', 'whitelist'].includes(command) && !startup.started) {
-        console.log('Quaver is not initialized yet.');
+/**
+ * Shuts down Quaver and handles the exiting of process gracefully.
+ * @param eventType - The event type triggering the exit. This determines if the exit was caused by a crash.
+ * @param exitErr - The error object that's initially causing the exit of the process, if any.
+ */
+export async function onProcessExit(
+    eventType: string,
+    exitErr?: Error,
+): Promise<void> {
+    if (appStatus.isExiting) {
         return;
     }
-    switch (command) {
-        case 'exit':
-            await shuttingDown('exit');
-            break;
-        case 'sessions':
-            console.log(
-                `There are currently ${bot.music.players.cache.size} active session(s).`,
-            );
-            break;
-        case 'stats': {
-            const uptime = msToTime(bot.uptime);
-            const uptimeString = msToTimeString(uptime);
-            console.log(
-                `Statistics:\nGuilds: ${bot.guilds.cache.size}\nUptime: ${uptimeString}`,
-            );
-            break;
-        }
-        case 'whitelist': {
-            const guildId = input.split(' ')[1];
-            const feature = input.split(' ')[2];
-            const duration = input.split(' ')[3];
-            let durationMs = -1;
-            if (!guildId || !feature) {
-                console.log('Usage: whitelist <guildId> <feature> [duration]');
-                break;
-            }
-            const guild = await bot.guilds.fetch(guildId);
-            if (!guild) {
-                console.log('Guild not found.');
-                break;
-            }
-            if (!['stay', 'autolyrics', 'smartqueue'].includes(feature)) {
-                console.log('Available features: stay, autolyrics, smartqueue');
-                break;
-            }
-            let featureName = '';
-            switch (feature) {
-                case 'stay':
-                    featureName = '24/7';
-                    break;
-                case 'autolyrics':
-                    featureName = 'Auto Lyrics';
-                    break;
-                case 'smartqueue':
-                    featureName = 'Smart Queue';
-            }
-            if (!settings.features[feature as WhitelistedFeatures].whitelist) {
-                console.log(`The ${featureName} whitelist is not enabled.`);
-                break;
-            }
-            if (duration) {
-                if (!parseTimeString(duration)) {
-                    console.log('Duration example: 5d1h, 1h30m, 10s');
-                    break;
-                }
-                durationMs = parseTimeString(duration);
-            }
-            const whitelisted = !!(await data.guild.get<number>(
-                guildId,
-                `features.${feature}.whitelisted`,
-            ));
-            if (whitelisted && !duration) {
-                await data.guild.unset(
-                    guildId,
-                    `features.${feature}.whitelisted`,
-                );
-                console.log(
-                    `Removed ${guild.name} from the ${featureName} whitelist.`,
-                );
-                break;
-            }
-            await data.guild.set(
-                guildId,
-                `features.${feature}.whitelisted`,
-                durationMs === -1 ? durationMs : Date.now() + durationMs,
-            );
-            console.log(
-                `Added ${guild.name} to the ${featureName} whitelist ${
-                    durationMs === -1
-                        ? 'permanently'
-                        : `for ${msToTimeString(msToTime(durationMs))}`
-                }.`,
-            );
-            break;
-        }
-        case 'eval': {
-            if (!settings.developerMode) {
-                console.log('Developer mode is not enabled.');
-                break;
-            }
-            if (!input.substring(command.length + 1)) {
-                console.log('No input provided.');
-                break;
-            }
-            let output: string;
-            try {
-                output = await eval(input.substring(command.length + 1));
-                if (typeof output !== 'string') {
-                    output = inspect(output, { depth: 1 });
-                }
-            } catch (error) {
-                output = error;
-            }
-            if (!output) output = '[no output]';
-            console.log(output);
-            break;
-        }
-        default:
-            console.log('Available commands: exit, sessions, whitelist, stats');
-            break;
-    }
-});
-// 'close' event catches ctrl+c, therefore we pass it to shuttingDown as a ctrl+c event
-rl.on('close', async (): Promise<void> => shuttingDown('SIGINT'));
-
-let inProgress = false;
-
-/**
- * Shuts the bot down gracefully.
- * @param eventType - The event type triggering the shutdown. This determines if the shutdown was caused by a crash.
- * @param err - The error object, if any.
- */
-export async function shuttingDown(
-    eventType: string,
-    err?: Error,
-): Promise<void> {
-    if (inProgress) return;
-    inProgress = true;
+    appStatus.isExiting = true;
     logger.info({
-        message: `Shutting down${eventType ? ` due to ${eventType}` : ''}...`,
+        message: `Process exiting${eventType ? ` due to ${eventType}` : ''}...`,
         label: 'Quaver',
     });
+    const isReady = appStatus.isReady || discordClient.isReady();
     try {
-        if (startup.started) {
-            const players = bot.music.players;
-            if (players.cache.size < 1) return;
+        // Use appStatus first instead of direct property access to discordClient to prevent an uninitialization error
+        // if the process encountered something and invoked this function before discordClient is initialized
+        if (!isReady) {
+            return;
+        }
+        const players = lavaclientNode.players;
+        const playersCache = players.cache;
+        if (playersCache.size < 1) {
+            return;
+        }
+        logger.info({
+            message: 'Disconnecting from all guilds...',
+            label: 'Quaver',
+        });
+        for (const pair of playersCache) {
+            const player: QuaverPlayer = pair[1];
             logger.info({
-                message: 'Disconnecting from all guilds...',
+                message: `[G ${player.id}] Disconnecting (restarting)`,
                 label: 'Quaver',
             });
-            for (const pair of players.cache) {
-                const player: QuaverPlayer = pair[1];
-                logger.info({
-                    message: `[G ${player.id}] Disconnecting (restarting)`,
-                    label: 'Quaver',
-                });
-                const fileBuffer = [];
-                if (player.queue.current && (player.playing || player.paused)) {
-                    fileBuffer.push(
-                        `${await getGuildLocaleString(
-                            player.id,
-                            'MISC.CURRENT',
-                        )}:`,
-                    );
-                    fileBuffer.push(player.queue.current.info.uri);
-                }
-                if (player.queue.tracks.length > 0) {
-                    fileBuffer.push(
-                        `${await getGuildLocaleString(
-                            player.id,
-                            'MISC.QUEUE',
-                        )}:`,
-                    );
-                    fileBuffer.push(
-                        player.queue.tracks
-                            .map((track): string => track.info.uri)
-                            .join('\n'),
-                    );
-                }
-                await player.handler.disconnect();
-                await player.handler.send(
-                    new ContainerBuilder({
-                        components: [
-                            new TextDisplayBuilder()
-                                .setContent(
-                                    `${await getGuildLocaleString(
-                                        player.id,
-                                        [
-                                            'exit',
-                                            'SIGINT',
-                                            'SIGTERM',
-                                            'lavalink',
-                                        ].includes(eventType)
-                                            ? 'MUSIC.PLAYER.RESTARTING.DEFAULT'
-                                            : 'MUSIC.PLAYER.RESTARTING.CRASHED',
-                                    )}${
-                                        fileBuffer.length > 0
-                                            ? `\n${await getGuildLocaleString(
-                                                  player.id,
-                                                  'MUSIC.PLAYER.RESTARTING.QUEUE_DATA_ATTACHED',
-                                              )}`
-                                            : ''
-                                    }`,
-                                )
-                                .toJSON(),
-                            new TextDisplayBuilder()
-                                .setContent(
-                                    await getGuildLocaleString(
-                                        player.id,
-                                        'MUSIC.PLAYER.RESTARTING.APOLOGY',
-                                    ),
-                                )
-                                .toJSON(),
-                            ...(fileBuffer.length > 0
-                                ? [
-                                      new SeparatorBuilder().toJSON(),
-                                      new FileBuilder()
-                                          .setURL('attachment://queue.txt')
-                                          .toJSON(),
-                                  ]
-                                : []),
-                        ],
-                    }),
-                    {
-                        type: MessageOptionsBuilderType.Warning,
-                        files:
-                            fileBuffer.length > 0
-                                ? [
-                                      new AttachmentBuilder(
-                                          Buffer.from(fileBuffer.join('\n')),
-                                          { name: 'queue.txt' },
-                                      ),
-                                  ]
-                                : [],
-                    },
+            const fileBuffer = [];
+            const playerQueue = player.queue;
+            const queueCurrent = playerQueue.current;
+            if (queueCurrent && (player.playing || player.paused)) {
+                fileBuffer.push(
+                    `${await getGuildLocaleString(player.id, 'MISC.CURRENT')}:`,
+                );
+                fileBuffer.push(queueCurrent.info.uri);
+            }
+            const queueTracks = playerQueue.tracks;
+            if (queueTracks.length > 0) {
+                fileBuffer.push(
+                    `${await getGuildLocaleString(player.id, 'MISC.QUEUE')}:`,
+                );
+                fileBuffer.push(
+                    queueTracks
+                        .map((track): string => track.info.uri)
+                        .join('\n'),
                 );
             }
+            const playerHandler = player.handler;
+            await playerHandler.disconnect();
+            await playerHandler.send(
+                new ContainerBuilder({
+                    components: [
+                        new TextDisplayBuilder()
+                            .setContent(
+                                `${await getGuildLocaleString(
+                                    player.id,
+                                    [
+                                        'exit',
+                                        'SIGINT',
+                                        'SIGTERM',
+                                        'lavalink',
+                                    ].includes(eventType)
+                                        ? 'MUSIC.PLAYER.RESTARTING.DEFAULT'
+                                        : 'MUSIC.PLAYER.RESTARTING.CRASHED',
+                                )}${
+                                    fileBuffer.length > 0
+                                        ? `\n${await getGuildLocaleString(
+                                              player.id,
+                                              'MUSIC.PLAYER.RESTARTING.QUEUE_DATA_ATTACHED',
+                                          )}`
+                                        : ''
+                                }`,
+                            )
+                            .toJSON(),
+                        new TextDisplayBuilder()
+                            .setContent(
+                                await getGuildLocaleString(
+                                    player.id,
+                                    'MUSIC.PLAYER.RESTARTING.APOLOGY',
+                                ),
+                            )
+                            .toJSON(),
+                        ...(fileBuffer.length > 0
+                            ? [
+                                  new SeparatorBuilder().toJSON(),
+                                  new FileBuilder()
+                                      .setURL('attachment://queue.txt')
+                                      .toJSON(),
+                              ]
+                            : []),
+                    ],
+                }),
+                {
+                    type: MessageOptionsBuilderType.Warning,
+                    files:
+                        fileBuffer.length > 0
+                            ? [
+                                  new AttachmentBuilder(
+                                      Buffer.from(fileBuffer.join('\n')),
+                                      { name: 'queue.txt' },
+                                  ),
+                              ]
+                            : [],
+                },
+            );
         }
-    } catch (error) {
-        if (error instanceof Error) {
-            logger.error({
-                message: 'Encountered error while shutting down.',
-                label: 'Quaver',
-            });
-            logger.error({
-                message: `${error.message}\n${error.stack}`,
-                label: 'Quaver',
-            });
+    } catch (cleanupErr) {
+        if (!(cleanupErr instanceof Error)) {
+            return;
         }
+        logger.error({
+            message: 'Encountered error while shutting down.',
+            label: 'Quaver',
+        });
+        logger.error({
+            message: `${cleanupErr.message}\n${cleanupErr.stack}`,
+            label: 'Quaver',
+        });
     } finally {
-        if (
-            !['exit', 'SIGINT', 'SIGTERM'].includes(eventType) &&
-            err instanceof Error
-        ) {
-            logger.error({
-                message: `${err.message}\n${err.stack}`,
-                label: 'Quaver',
-            });
-            logger.info({
-                message: 'Logging additional output to error.log.',
-                label: 'Quaver',
-            });
-            try {
-                await writeFile(
-                    'error.log',
-                    `${eventType}${err.message ? `\n${err.message}` : ''}${
-                        err.stack ? `\n${err.stack}` : ''
-                    }`,
-                );
-            } catch (e) {
-                if (e instanceof Error) {
-                    logger.error({
-                        message:
-                            'Encountered error while writing to error.log.',
-                        label: 'Quaver',
-                    });
-                    logger.error({
-                        message: `${e.message}\n${e.stack}`,
-                        label: 'Quaver',
-                    });
-                }
-            }
+        await writeExitErrorToFile(eventType, exitErr);
+        if (isReady) {
+            await discordClient.destroy();
         }
-        await bot.destroy();
         process.exit();
     }
 }
 
-spinner.start(`Loading ${colors.cyan('locales')}`);
-const locales = new Collection<string, unknown>();
-const localeFolders = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['..', 'locales']),
-);
-for await (const folder of localeFolders) {
-    const localeFiles = readdirSync(
-        getAbsoluteFileURL(import.meta.url, ['..', 'locales', folder]),
-    );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const localeProps: Record<string, any> = {};
-    for await (const file of localeFiles) {
-        const categoryProps = await import(
-            getAbsoluteFileURL(import.meta.url, [
-                '..',
-                'locales',
-                folder,
-                file,
-            ]).toString()
-        );
-        const categoryName = file.split('.')[0].toUpperCase();
-        localeProps[categoryName] = categoryProps.default;
+async function writeExitErrorToFile(
+    eventType: string,
+    exitErr?: Error,
+): Promise<void> {
+    if (
+        NORMAL_PROCESS_EXIT_EVENTS.includes(eventType) ||
+        !(exitErr instanceof Error)
+    ) {
+        return;
     }
-    locales.set(folder, localeProps);
-}
-setLocales(locales);
-spinner.success();
-
-spinner.start(`Loading ${colors.cyan('command handlers')}`);
-const commandFiles = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['commands', 'chatInputCommands']),
-).filter((file): boolean => file.endsWith('.js') || file.endsWith('.ts'));
-for await (const file of commandFiles) {
-    const command: { default: ChatInputCommandHandler } = await import(
-        getAbsoluteFileURL(import.meta.url, [
-            'commands',
-            'chatInputCommands',
-            file,
-        ]).toString()
-    );
-    bot.chatInputCommands.set(command.default.data.name, command.default);
-}
-spinner.success();
-
-spinner.start(`Loading ${colors.cyan('autocomplete handlers')}`);
-const autocompleteFiles = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['autocompletes']),
-).filter((file): boolean => file.endsWith('.js') || file.endsWith('.ts'));
-for await (const file of autocompleteFiles) {
-    const autocomplete: { default: AutocompleteHandler } = await import(
-        getAbsoluteFileURL(import.meta.url, ['autocompletes', file]).toString()
-    );
-    bot.autocompletes.set(autocomplete.default.name, autocomplete.default);
-}
-spinner.success();
-
-spinner.start(`Loading ${colors.cyan('component handlers')}`);
-const componentsFolders = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['components']),
-);
-for await (const folder of componentsFolders) {
-    const componentFiles = readdirSync(
-        getAbsoluteFileURL(import.meta.url, ['components', folder]),
-    ).filter((file): boolean => file.endsWith('.js') || file.endsWith('.ts'));
-    for await (const file of componentFiles) {
-        const component: { default: ComponentTypeHandler } = await import(
-            getAbsoluteFileURL(import.meta.url, [
-                'components',
-                folder,
-                file,
-            ]).toString()
+    logger.error({
+        message: `${exitErr.message}\n${exitErr.stack}`,
+        label: 'Quaver',
+    });
+    logger.info({
+        message: 'Logging additional output to error.log.',
+        label: 'Quaver',
+    });
+    try {
+        await nodeFsPromises.writeFile(
+            'error.log',
+            `${eventType}${exitErr.message ? `\n${exitErr.message}` : ''}${
+                exitErr.stack ? `\n${exitErr.stack}` : ''
+            }`,
         );
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (!(bot as Record<string, any>)[folder]) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (bot as Record<string, any>)[folder] = new Collection();
+    } catch (writeErr) {
+        if (!(writeErr instanceof Error)) {
+            return;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (bot as Record<string, any>)[folder].set(
-            component.default.name,
-            component.default,
-        );
+        logger.error({
+            message: 'Encountered error while writing to error.log.',
+            label: 'Quaver',
+        });
+        logger.error({
+            message: `${writeErr.message}\n${writeErr.stack}`,
+            label: 'Quaver',
+        });
     }
 }
+
+spinner.start(`Loading ${colors.cyan('locales')}`);
 spinner.success();
 
-spinner.start(`Loading ${colors.cyan('event handlers')}`);
-const eventFiles = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['events']),
-).filter((file): boolean => file.endsWith('.js') || file.endsWith('.ts'));
-for await (const file of eventFiles) {
-    const event: { default: QuaverEvent } = await import(
-        getAbsoluteFileURL(import.meta.url, ['events', file]).toString()
-    );
-    if (event.default.once) {
-        bot.once(event.default.name, (...args): void | Promise<void> =>
-            event.default.execute(...args),
-        );
-    } else {
-        bot.on(event.default.name, (...args): void | Promise<void> =>
-            event.default.execute(...args),
-        );
-    }
-}
-spinner.success();
+// spinner.start(`Loading interactionHandlers: ${colors.cyan('command')}`);
+// spinner.success();
 
-spinner.start(`Loading ${colors.cyan('lavaclient event handlers')}`);
-const musicEventFiles = readdirSync(
-    getAbsoluteFileURL(import.meta.url, ['events', 'music']),
-).filter((file): boolean => file.endsWith('.js') || file.endsWith('.ts'));
-for await (const file of musicEventFiles) {
-    const event: { default: QuaverMusicEvent } = await import(
-        getAbsoluteFileURL(import.meta.url, [
-            'events',
-            'music',
-            file,
-        ]).toString()
-    );
-    if (event.default.once) {
-        bot.music.once(
-            event.default.name as keyof ClientEvents,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (...args: any[]): void | Promise<void> =>
-                event.default.execute(...args),
-        );
-    } else {
-        bot.music.on(
-            event.default.name as keyof ClientEvents,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (...args: any[]): void | Promise<void> =>
-                event.default.execute(...args),
-        );
-    }
-}
-spinner.success();
+// spinner.start(`Loading interactionHandlers: ${colors.cyan('autocomplete')}`);
+// spinner.success();
 
-if (settings.features.web.enabled) {
-    setInterval((): boolean => bot.emit('timer'), 500);
-}
+// spinner.start(`Loading interactionHandlers: ${colors.cyan('component')}`);
+// spinner.success();
 
+await loadAllEventHandlers(
+    nodePath.join(dirname, 'events'),
+    {
+        discordClient,
+        lavaclientNode,
+        io,
+    },
+    {
+        discordClient: coreArgs,
+        lavaclientNode: coreArgs,
+        io: [discordClient],
+    },
+    {
+        onProcess: async (
+            bindingName: string,
+            relativePath: string,
+        ): Promise<boolean | void> => {
+            if (EXCLUDE_EVENT_HANDLERS.includes(bindingName)) {
+                return false;
+            }
+            if (relativePath === 'io/socket') {
+                return false;
+            }
+            spinner.start(`Loading eventHandlers: ${colors.cyan(bindingName)}`);
+        },
+        onFinish: async (
+            _bindingName: string,
+            _relativePath: string,
+            error: Error,
+        ): Promise<void> => {
+            if (error) {
+                spinner.error(error.message);
+            }
+            spinner.success();
+        },
+    },
+);
+
+/**
+ * By at this point in execution, once the features, modules and functions have been set up and ready,
+ * it's a good time for the Discord client to login to Discord without any other hindrance.
+ */
 spinner.start(`Logging in to ${colors.cyan('Discord')}`);
-await bot.login(settings.token);
+await discordClient.login(settings.token);
 spinner.success();
 
-[
-    'exit',
-    'SIGINT',
-    'SIGUSR1',
-    'SIGUSR2',
-    'SIGTERM',
-    'uncaughtException',
-    'unhandledRejection',
-].forEach((eventType): void => {
-    process.on(
-        eventType,
-        async (err): Promise<void> => shuttingDown(eventType, err),
-    );
-});
+spinner.start(`Starting ${colors.cyan('periodic track updates')}`);
+startPeriodicTrackUpdates();
+spinner.success();

@@ -1,0 +1,108 @@
+import type { QuaverQueue, QuaverSong } from '#src/lib/util/common.d.js';
+import {
+    data,
+    logger,
+    MessageOptionsBuilderType,
+} from '#src/lib/util/common.js';
+import { LoopType } from '@lavaclient/plugin-queue';
+import type { Collection, GuildMember, Snowflake } from 'discord.js';
+import {
+    getLocaleString,
+    getTrackMarkdownLocaleString,
+} from '#src/lib/util/util.js';
+import { settings } from '#src/lib/util/settings.js';
+import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
+
+export default {
+    name: 'trackEnd',
+    once: false,
+    async execute(
+        _onProcessExit: onProcessExit,
+        _discordClient: QuaverClient,
+        queue: QuaverQueue,
+        track: QuaverSong,
+        reason: 'cleanup' | 'finished' | 'loadFailed' | 'replaced' | 'stopped',
+    ): Promise<void> {
+        delete queue.player.skip;
+        if (reason === 'loadFailed') {
+            logger.warn({
+                message: `[G ${queue.player.id}] Track skipped as it failed to load`,
+                label: 'Quaver',
+            });
+            const guildLocaleCode =
+                (await data.guild.get<string>(
+                    queue.player.id,
+                    'settings.locale',
+                )) ?? settings.defaultLocaleCode;
+            await queue.player.handler.send(
+                getLocaleString(
+                    guildLocaleCode,
+                    'MUSIC.PLAYER.TRACK_SKIPPED_ERROR',
+                    getTrackMarkdownLocaleString(track),
+                ),
+                { type: MessageOptionsBuilderType.Warning },
+            );
+            if (!queue.player.failed) queue.player.failed = 0;
+            queue.player.failed++;
+            if (queue.player.failed >= 3) {
+                queue.clear();
+                await queue.skip();
+                await queue.start();
+                await queue.player.handler.send(
+                    getLocaleString(
+                        guildLocaleCode,
+                        'MUSIC.PLAYER.QUEUE_CLEARED_ERROR',
+                    ),
+                    { type: MessageOptionsBuilderType.Warning },
+                );
+            }
+            return;
+        }
+        switch (queue.loop.type) {
+            case LoopType.Song:
+                if (track.info.length <= 15 * 1000) {
+                    queue.setLoop(LoopType.None);
+                    await queue.player.handler.locale(
+                        'MUSIC.PLAYER.LOOP_TRACK_DISABLED',
+                        { type: MessageOptionsBuilderType.Warning },
+                    );
+                    await queue.skip();
+                    await queue.start();
+                }
+                break;
+            case LoopType.Queue:
+                if (
+                    queue.tracks.reduce(
+                        (a: number, b: QuaverSong): number => a + b.info.length,
+                        track.info.length,
+                    ) <=
+                    15 * 1000
+                ) {
+                    queue.setLoop(LoopType.None);
+                    await queue.player.handler.locale(
+                        'MUSIC.PLAYER.LOOP_QUEUE_DISABLED',
+                        { type: MessageOptionsBuilderType.Warning },
+                    );
+                }
+        }
+        if (queue.player.failed) delete queue.player.failed;
+        const members = _discordClient.guilds.cache
+            .get(queue.player.id)
+            .channels.cache.get(queue.player.voice.channelId)
+            .members as Collection<Snowflake, GuildMember>;
+        if (
+            members?.filter((m): boolean => !m.user.bot).size < 1 &&
+            !(await data.guild.get(queue.player.id, 'settings.stay.enabled'))
+        ) {
+            logger.info({
+                message: `[G ${queue.player.id}] Disconnecting (alone)`,
+                label: 'Quaver',
+            });
+            await queue.player.handler.locale(
+                'MUSIC.DISCONNECT.ALONE.DISCONNECTED.DEFAULT',
+                { type: MessageOptionsBuilderType.Warning },
+            );
+            await queue.player.handler.disconnect();
+        }
+    },
+};

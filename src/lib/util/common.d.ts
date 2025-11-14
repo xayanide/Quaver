@@ -20,6 +20,7 @@ import type {
     VoiceChannel,
 } from 'discord.js';
 import type { Node, Player } from 'lavaclient';
+import type { Server } from 'socket.io';
 
 export type SearchStateRecord = {
     pages: Song[][];
@@ -31,15 +32,15 @@ export type WhitelistedFeatures = 'stay' | 'autolyrics' | 'smartqueue';
 
 export type SettingsPageGenericOptions = {
     components: Array<MessageActionRowComponentBuilder>;
-}
+};
 
 export type SettingsPagePremiumOptions = SettingsPageGenericOptions & {
     features: string[];
-}
+};
 
 export type SettingsPageFormatOptions = SettingsPageGenericOptions & {
     containers: ContainerBuilder[];
-}
+};
 
 export type SettingsPageOptions =
     | 'premium'
@@ -81,8 +82,19 @@ export type JSONResponse<T> = { message?: string } & T;
 
 export type QuaverChannels = TextChannel | VoiceChannel | StageChannel;
 
-export type QuaverClient = Client &
-    InteractionHandlerMapsFlat & { music?: Node };
+export type QuaverAppStatus = {
+    startTime: number;
+    isReady: boolean;
+    isExiting: boolean;
+};
+
+export type QuaverClient<IsReady extends boolean = boolean> =
+    Client<IsReady> & {
+        interactionHandlerMaps?: InteractionHandlerMapsFlat;
+        io?: Server;
+        music?: Node;
+        appStatus?: QuaverAppStatus;
+    };
 
 export type QuaverSong = Song & {
     requesterTag?: string;
@@ -115,3 +127,8 @@ export type QuaverPlayerSkipObject = {
 export type QuaverInteraction<T> = T extends AutocompleteInteraction
     ? T & { client: QuaverClient }
     : T & { client: QuaverClient; replyHandler: ReplyHandler };
+
+export type onProcessExit = (
+    eventType: string,
+    exitErr?: Error,
+) => Promise<void>;

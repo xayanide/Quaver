@@ -7,8 +7,8 @@ const dirname = getDirname(import.meta.url);
 
 const rootPath = nodePath.join(dirname, '..', '..');
 const distRootPath = nodePath.join(rootPath, 'dist');
-const commandsPath = nodePath.join(distRootPath, 'commands');
-
+const interactionsPath = nodePath.join(distRootPath, 'interactions');
+const commandsPath = nodePath.join(interactionsPath, 'commands');
 const chatInputCommandsPath = nodePath.join(commandsPath, 'chatInputCommands');
 
 async function loadCommandsFromPath(directoryPath) {

@@ -123,6 +123,16 @@ function getMergedListenerArgs(
  * It also prepends predefined arguments (`listenerPrependedArgs`) to the
  * arguments emitted when the event is triggered.
  *
+ * WARNING:
+ * Do NOT rely on `this` inside execute().
+ *
+ * Event handlers are loaded dynamically and their `execute` function
+ * is passed directly to the event emitter. This means `this` WILL NOT
+ * refer to the module object. Using `this.name` or `this.execute` will
+ * be undefined.
+ *
+ * object.function.bind(object) could solve this issue, but we intentionally avoid binding here. The this value is left unbound by design.
+ *
  * @param {(...args: unknown[]) => unknown | Promise<unknown>} executeMethod - The method to be executed.
  * @param {unknown[]} listenerPrependedArgs - Arguments to be prepended to emitted event arguments.
  * @returns {(...args: unknown[]) => unknown | Promise<unknown>} - The event listener function.
@@ -435,4 +445,105 @@ export async function loadEventHandlers(
 export function getDirname(moduleAbsoluteFileUrl: string): string {
     const fileName = nodeUrl.fileURLToPath(moduleAbsoluteFileUrl);
     return nodePath.dirname(fileName);
+}
+
+// wip
+export async function loadAllEventHandlers(
+    baseDir: string,
+    bindings: Record<string, EventEmitter>,
+    listenerPrependedArgs: Record<string, unknown[]> = {},
+    callbacks?: {
+        onProcess?: (
+            bindingName: string,
+            relativePath: string,
+        ) => Promise<boolean | void>;
+        onFinish?: (
+            bindingName: string,
+            relativePath: string,
+            error?: Error,
+        ) => Promise<void>;
+    },
+): Promise<void> {
+    async function traverse(
+        currentDir: string,
+        bindingName: string,
+        prefix = '',
+    ): Promise<void> {
+        const entries = await nodeFsPromises.readdir(currentDir, {
+            withFileTypes: true,
+        });
+        for (const entry of entries) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            const dirName = entry.name;
+            const relativePath = nodePath
+                .join(prefix, dirName)
+                .replace(/\\/g, '/');
+            const subDir = nodePath.join(currentDir, dirName);
+            const subBinding = bindings?.[dirName];
+            if (callbacks?.onProcess) {
+                const shouldContinue = await callbacks.onProcess(
+                    bindingName,
+                    relativePath,
+                );
+                if (shouldContinue === false) {
+                    continue;
+                }
+            }
+            if (!subBinding) {
+                continue;
+            }
+            let error: Error | undefined;
+            try {
+                await loadEventHandlers(subDir, subBinding, {
+                    listenerPrependedArgs:
+                        listenerPrependedArgs[bindingName] ?? [],
+                });
+            } catch (err) {
+                error = err;
+            } finally {
+                if (callbacks?.onFinish) {
+                    await callbacks.onFinish(bindingName, bindingName, error);
+                }
+            }
+            await traverse(subDir, bindingName, relativePath);
+        }
+    }
+    const entries = await nodeFsPromises.readdir(baseDir, {
+        withFileTypes: true,
+    });
+    for (const entry of entries) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const bindingName = entry.name;
+        const binding = bindings[bindingName];
+        if (callbacks?.onProcess) {
+            const shouldContinue = await callbacks.onProcess(
+                bindingName,
+                bindingName,
+            );
+            if (shouldContinue === false) {
+                continue;
+            }
+        }
+        if (!binding) {
+            continue;
+        }
+        const topLevelPath = nodePath.join(baseDir, bindingName);
+        let error: Error | undefined;
+        try {
+            await loadEventHandlers(topLevelPath, binding, {
+                listenerPrependedArgs: listenerPrependedArgs[bindingName] ?? [],
+            });
+        } catch (err) {
+            error = err;
+        } finally {
+            if (callbacks?.onFinish) {
+                await callbacks.onFinish(bindingName, bindingName, error);
+            }
+        }
+        await traverse(topLevelPath, bindingName, bindingName);
+    }
 }

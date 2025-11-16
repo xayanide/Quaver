@@ -99,11 +99,7 @@ export const logger = createLogger({
             : []),
     ],
 });
-export let locales = new Collection();
-
-export function setLocales(newLocales: Collection<string, unknown>): void {
-    locales = newLocales;
-}
+export const locales = new Collection();
 
 export const confirmationTimeout: Record<
     Snowflake,

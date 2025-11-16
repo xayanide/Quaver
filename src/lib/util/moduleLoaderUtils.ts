@@ -11,6 +11,7 @@ import type {
     ProcessFileOverride,
 } from './moduleLoaderUtils.d.js';
 import type { Dirent } from 'node:fs';
+import type { Collection } from 'discord.js';
 
 const DEFAULT_MODULE_EXPORT_NAME = 'default';
 
@@ -447,7 +448,38 @@ export function getDirname(moduleAbsoluteFileUrl: string): string {
     return nodePath.dirname(fileName);
 }
 
-// wip
+async function processDirectory(
+    bindingName: string,
+    relativePath: string,
+    absolutePath: string,
+    binding: EventEmitter,
+    listenerPrependedArgs: Record<string, unknown[]> = {},
+    callbacks?: {
+        onProcess?: (
+            bindingName: string,
+            relativePath: string,
+        ) => Promise<boolean | void>;
+        onFinish?: (
+            bindingName: string,
+            relativePath: string,
+            error?: Error,
+        ) => Promise<void>;
+    },
+): Promise<void> {
+    let error: Error | undefined;
+    try {
+        await loadEventHandlers(absolutePath, binding, {
+            listenerPrependedArgs: listenerPrependedArgs[bindingName] ?? [],
+        });
+    } catch (err) {
+        error = err;
+    } finally {
+        if (callbacks?.onFinish) {
+            await callbacks.onFinish(bindingName, relativePath, error);
+        }
+    }
+}
+
 export async function loadAllEventHandlers(
     baseDir: string,
     bindings: Record<string, EventEmitter>,
@@ -473,40 +505,29 @@ export async function loadAllEventHandlers(
             withFileTypes: true,
         });
         for (const entry of entries) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
+            if (!entry.isDirectory()) continue;
             const dirName = entry.name;
             const relativePath = nodePath
                 .join(prefix, dirName)
                 .replace(/\\/g, '/');
             const subDir = nodePath.join(currentDir, dirName);
-            const subBinding = bindings?.[dirName];
+            const subBinding = bindings[dirName];
             if (callbacks?.onProcess) {
                 const shouldContinue = await callbacks.onProcess(
                     bindingName,
                     relativePath,
                 );
-                if (shouldContinue === false) {
-                    continue;
-                }
+                if (shouldContinue === false) continue;
             }
-            if (!subBinding) {
-                continue;
-            }
-            let error: Error | undefined;
-            try {
-                await loadEventHandlers(subDir, subBinding, {
-                    listenerPrependedArgs:
-                        listenerPrependedArgs[bindingName] ?? [],
-                });
-            } catch (err) {
-                error = err;
-            } finally {
-                if (callbacks?.onFinish) {
-                    await callbacks.onFinish(bindingName, bindingName, error);
-                }
-            }
+            if (!subBinding) continue;
+            await processDirectory(
+                bindingName,
+                relativePath,
+                subDir,
+                subBinding,
+                listenerPrependedArgs,
+                callbacks,
+            );
             await traverse(subDir, bindingName, relativePath);
         }
     }
@@ -514,9 +535,7 @@ export async function loadAllEventHandlers(
         withFileTypes: true,
     });
     for (const entry of entries) {
-        if (!entry.isDirectory()) {
-            continue;
-        }
+        if (!entry.isDirectory()) continue;
         const bindingName = entry.name;
         const binding = bindings[bindingName];
         if (callbacks?.onProcess) {
@@ -524,26 +543,126 @@ export async function loadAllEventHandlers(
                 bindingName,
                 bindingName,
             );
-            if (shouldContinue === false) {
+            if (shouldContinue === false) continue;
+        }
+        if (!binding) continue;
+        const topLevelDir = nodePath.join(baseDir, bindingName);
+        await processDirectory(
+            bindingName,
+            bindingName,
+            topLevelDir,
+            binding,
+            listenerPrependedArgs,
+            callbacks,
+        );
+        await traverse(topLevelDir, bindingName, bindingName);
+    }
+}
+
+export async function loadAllInteractionHandlerMaps(
+    interactionsBaseDir: string,
+    handlerMaps: Record<string, Map<string, unknown>>,
+    callbacks?: {
+        onProcess?: (
+            mapName: string,
+            relativePath: string,
+        ) => Promise<boolean | void>;
+        onFinish?: (
+            mapName: string,
+            relativePath: string,
+            error?: Error,
+        ) => Promise<void>;
+    },
+): Promise<void> {
+    const mapNames = new Set(Object.keys(handlerMaps));
+    async function walk(dir: string, prefix = ''): Promise<void> {
+        const entries = await nodeFsPromises.readdir(dir, {
+            withFileTypes: true,
+        });
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const folderName = entry.name;
+            const relativePath = nodePath
+                .join(prefix, folderName)
+                .replace(/\\/g, '/');
+            const absolute = nodePath.join(dir, folderName);
+            if (mapNames.has(folderName)) {
+                // onProcess callback
+                if (callbacks?.onProcess) {
+                    const shouldContinue = await callbacks.onProcess(
+                        folderName,
+                        relativePath,
+                    );
+                    if (shouldContinue === false) continue;
+                }
+                let error: Error | undefined;
+                try {
+                    await loadInteractionHandlerMaps(absolute, handlerMaps);
+                } catch (err) {
+                    error = err as Error;
+                } finally {
+                    if (callbacks?.onFinish) {
+                        await callbacks.onFinish(
+                            folderName,
+                            relativePath,
+                            error,
+                        );
+                    }
+                }
+            }
+            await walk(absolute, relativePath);
+        }
+    }
+    await walk(interactionsBaseDir);
+}
+
+function isDirectoryEntry(dirent: Dirent<string>): boolean {
+    return dirent.isDirectory();
+}
+
+async function getSubdirectories(baseDir: string): Promise<string[]> {
+    const entries = await nodeFsPromises.readdir(baseDir, {
+        withFileTypes: true,
+    });
+    const directories = entries
+        .filter(isDirectoryEntry)
+        .map(function formatEntryPath(dirent): string {
+            return nodePath.join(baseDir, dirent.name);
+        });
+    return directories;
+}
+
+export async function loadLocales(
+    baseDir: string,
+    localesMap: Collection<string, Record<string, unknown>>,
+): Promise<void> {
+    const subDirs = await getSubdirectories(baseDir);
+    for (const folderPath of subDirs) {
+        const folderName = nodePath.basename(folderPath);
+        const localeProps: Record<string, unknown> = {};
+        const files = await nodeFsPromises.readdir(folderPath, {
+            withFileTypes: true,
+        });
+        for (const file of files) {
+            if (
+                !file.isFile() ||
+                !IMPORTABLE_JAVASCRIPT_MODULE_FILE_EXTENSIONS.some(
+                    (fileExtension): boolean =>
+                        file.name.endsWith(fileExtension),
+                )
+            ) {
+                return;
+            }
+            const filePath = nodePath.join(folderPath, file.name);
+            const moduleExport = await getModuleExport(
+                nodeUrl.pathToFileURL(filePath).href,
+            );
+            if (!moduleExport) {
                 continue;
             }
+            const categoryName = file.name.split('.')[0].toUpperCase();
+            localeProps[categoryName] = moduleExport;
         }
-        if (!binding) {
-            continue;
-        }
-        const topLevelPath = nodePath.join(baseDir, bindingName);
-        let error: Error | undefined;
-        try {
-            await loadEventHandlers(topLevelPath, binding, {
-                listenerPrependedArgs: listenerPrependedArgs[bindingName] ?? [],
-            });
-        } catch (err) {
-            error = err;
-        } finally {
-            if (callbacks?.onFinish) {
-                await callbacks.onFinish(bindingName, bindingName, error);
-            }
-        }
-        await traverse(topLevelPath, bindingName, bindingName);
+        localesMap.set(folderName, localeProps);
     }
 }

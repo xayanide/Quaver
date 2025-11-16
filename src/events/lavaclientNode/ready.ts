@@ -7,7 +7,7 @@ import type {
 } from '#src/lib/util/common.d.js';
 import { get } from 'lodash-es';
 import PlayerHandler from '#src/lib/PlayerHandler.js';
-import type { LavalinkWSClientReadyEvent } from 'lavalink-ws-client';
+import { type LavalinkWSClientReadyEvent } from 'lavalink-ws-client';
 
 export default {
     name: 'ready',

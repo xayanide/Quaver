@@ -3,11 +3,11 @@ import {
     getGuildLocaleString,
 } from '#src/lib/util/util.js';
 import type { Message, MessageCreateOptions } from 'discord.js';
-import { MessageFlags, PermissionsBitField } from 'discord.js';
+import { Events, MessageFlags, PermissionsBitField } from 'discord.js';
 import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
-    name: 'messageCreate',
+    name: Events.MessageCreate,
     once: false,
     async execute(
         _onProcessExit: onProcessExit,

@@ -3,10 +3,10 @@ import { logger } from '#src/lib/util/common.js';
 import { settings } from '#src/lib/util/settings.js';
 import { version } from '#src/lib/util/version.js';
 import type { PresenceStatusData } from 'discord.js';
-import { ActivityType } from 'discord.js';
+import { ActivityType, Events } from 'discord.js';
 
 export default {
-    name: 'clientReady',
+    name: Events.ClientReady,
     once: true,
     async execute(
         _onProcessExit: onProcessExit,

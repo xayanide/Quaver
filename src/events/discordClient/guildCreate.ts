@@ -1,9 +1,9 @@
 import { logger } from '#src/lib/util/common.js';
-import type { Guild } from 'discord.js';
+import { Events, type Guild } from 'discord.js';
 import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
 
 export default {
-    name: 'guildCreate',
+    name: Events.GuildCreate,
     once: false,
     execute(
         _onProcessExit: onProcessExit,

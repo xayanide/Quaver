@@ -8,7 +8,7 @@ import type {
 import { logger, MessageOptionsBuilderType } from '#src/lib/util/common.js';
 import { getFailedChecks } from '#src/lib/util/util.js';
 import type { CommandInteractionOption } from 'discord.js';
-import { PermissionsBitField } from 'discord.js';
+import { Events, PermissionsBitField } from 'discord.js';
 import type {
     AllInteractions,
     CommandInteractions,
@@ -383,7 +383,7 @@ async function onInteractionCreate(
 }
 
 export default {
-    name: 'interactionCreate',
+    name: Events.InteractionCreate,
     once: false,
     async execute(
         _onProcessExit: onProcessExit,

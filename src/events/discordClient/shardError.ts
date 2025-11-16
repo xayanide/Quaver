@@ -1,8 +1,9 @@
 import { logger } from '#src/lib/util/common.js';
 import type { onProcessExit, QuaverClient } from '#src/lib/util/common.d.js';
+import { Events } from 'discord.js';
 
 export default {
-    name: 'shardError',
+    name: Events.ShardError,
     once: false,
     execute(
         _onProcessExit: onProcessExit,

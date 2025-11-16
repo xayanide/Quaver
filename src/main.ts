@@ -13,6 +13,7 @@ import {
     data,
     logger,
     MessageOptionsBuilderType,
+    locales,
 } from '#src/lib/util/common.js';
 import { settings } from '#src/lib/util/settings.js';
 import {
@@ -46,6 +47,8 @@ import {
     loadAllEventHandlers,
     getDirname,
     loadEventHandlers,
+    loadAllInteractionHandlerMaps,
+    loadLocales,
 } from './lib/util/moduleLoaderUtils.js';
 import type EventEmitter from 'node:events';
 import type Keyv from 'keyv';
@@ -489,16 +492,33 @@ async function writeExitErrorToFile(
 }
 
 spinner.start(`Loading ${colors.cyan('locales')}`);
+await loadLocales(
+    nodePath.join(dirname, '..', 'locales'),
+    locales as Collection<string, Record<string, unknown>>,
+);
 spinner.success();
 
-// spinner.start(`Loading interactionHandlers: ${colors.cyan('command')}`);
-// spinner.success();
-
-// spinner.start(`Loading interactionHandlers: ${colors.cyan('autocomplete')}`);
-// spinner.success();
-
-// spinner.start(`Loading interactionHandlers: ${colors.cyan('component')}`);
-// spinner.success();
+await loadAllInteractionHandlerMaps(
+    nodePath.join(dirname, 'interactions'),
+    interactionHandlerMaps as Record<string, Map<string, unknown>>,
+    {
+        onProcess: async (mapName): Promise<void> => {
+            spinner.start(
+                `Loading interactionHandlers: ${colors.cyan(mapName)}`,
+            );
+        },
+        onFinish: async (
+            _mapName: string,
+            _relativePath: string,
+            error: Error,
+        ): Promise<void> => {
+            if (error) {
+                spinner.error(error.message);
+            }
+            spinner.success();
+        },
+    },
+);
 
 await loadAllEventHandlers(
     nodePath.join(dirname, 'events'),

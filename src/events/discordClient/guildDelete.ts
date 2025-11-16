@@ -4,10 +4,10 @@ import type {
     QuaverPlayer,
 } from '#src/lib/util/common.d.js';
 import { data, logger } from '#src/lib/util/common.js';
-import type { Guild } from 'discord.js';
+import { Events, type Guild } from 'discord.js';
 
 export default {
-    name: 'guildDelete',
+    name: Events.GuildDelete,
     once: false,
     async execute(
         _onProcessExit: onProcessExit,

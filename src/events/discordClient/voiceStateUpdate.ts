@@ -14,6 +14,7 @@ import type { GuildMember, VoiceState } from 'discord.js';
 import {
     ChannelType,
     ContainerBuilder,
+    Events,
     PermissionsBitField,
     StageInstancePrivacyLevel,
     TextDisplayBuilder,
@@ -199,7 +200,7 @@ async function onChannelJoinOrMove(
 }
 
 export default {
-    name: 'voiceStateUpdate',
+    name: Events.VoiceStateUpdate,
     once: false,
     async execute(
         _onProcessExit: onProcessExit,

@@ -466,12 +466,18 @@ async function processDirectory(
         ) => Promise<void>;
     },
 ): Promise<void> {
-    let error: Error | undefined;
+    let error;
     try {
         await loadEventHandlers(absolutePath, binding, {
-            listenerPrependedArgs: listenerPrependedArgs[bindingName] ?? [],
+            listenerPrependedArgs:
+                listenerPrependedArgs[relativePath] ??
+                listenerPrependedArgs[bindingName] ??
+                [],
         });
     } catch (err) {
+        if (!(err instanceof Error)) {
+            return;
+        }
         error = err;
     } finally {
         if (callbacks?.onFinish) {
@@ -505,21 +511,41 @@ export async function loadAllEventHandlers(
             withFileTypes: true,
         });
         for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
+            if (!entry.isDirectory()) {
+                continue;
+            }
             const dirName = entry.name;
             const relativePath = nodePath
                 .join(prefix, dirName)
                 .replace(/\\/g, '/');
             const subDir = nodePath.join(currentDir, dirName);
-            const subBinding = bindings[dirName];
+            const subBinding = bindings[relativePath] ?? bindings[dirName];
             if (callbacks?.onProcess) {
                 const shouldContinue = await callbacks.onProcess(
                     bindingName,
                     relativePath,
                 );
-                if (shouldContinue === false) continue;
+                if (shouldContinue === false) {
+                    if (callbacks?.onFinish) {
+                        await callbacks.onFinish(
+                            bindingName,
+                            relativePath,
+                            new Error(`${relativePath} canceled`),
+                        );
+                    }
+                    continue;
+                }
             }
-            if (!subBinding) continue;
+            if (!subBinding) {
+                if (callbacks?.onFinish) {
+                    await callbacks.onFinish(
+                        bindingName,
+                        relativePath,
+                        new Error(`${relativePath} no sub binding`),
+                    );
+                }
+                continue;
+            }
             await processDirectory(
                 bindingName,
                 relativePath,
@@ -535,7 +561,9 @@ export async function loadAllEventHandlers(
         withFileTypes: true,
     });
     for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        if (!entry.isDirectory()) {
+            continue;
+        }
         const bindingName = entry.name;
         const binding = bindings[bindingName];
         if (callbacks?.onProcess) {
@@ -543,9 +571,27 @@ export async function loadAllEventHandlers(
                 bindingName,
                 bindingName,
             );
-            if (shouldContinue === false) continue;
+            if (shouldContinue === false) {
+                if (callbacks?.onFinish) {
+                    await callbacks.onFinish(
+                        bindingName,
+                        bindingName,
+                        new Error(`${bindingName} canceled`),
+                    );
+                }
+                continue;
+            }
         }
-        if (!binding) continue;
+        if (!binding) {
+            if (callbacks?.onFinish) {
+                await callbacks.onFinish(
+                    bindingName,
+                    bindingName,
+                    new Error(`No ${bindingName} binding`),
+                );
+            }
+            continue;
+        }
         const topLevelDir = nodePath.join(baseDir, bindingName);
         await processDirectory(
             bindingName,

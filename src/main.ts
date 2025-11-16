@@ -516,6 +516,7 @@ await loadAllInteractionHandlerMaps(
         ): Promise<void> => {
             if (error) {
                 spinner.error(error.message);
+                return;
             }
             spinner.success();
         },
@@ -526,11 +527,13 @@ await loadAllEventHandlers(
     nodePath.join(dirname, 'events'),
     {
         discordClient,
+        'discordClient/ws': discordClient.ws,
         lavaclientNode,
         io,
     },
     {
         discordClient: coreArgs,
+        'discordClient/ws': [lavaclientNode],
         lavaclientNode: coreArgs,
         io: [discordClient],
     },
@@ -539,13 +542,15 @@ await loadAllEventHandlers(
             bindingName: string,
             relativePath: string,
         ): Promise<boolean | void> => {
+            spinner.start(
+                `Loading eventHandlers: ${colors.cyan(relativePath)}`,
+            );
             if (EXCLUDE_EVENT_HANDLERS.includes(bindingName)) {
                 return false;
             }
             if (relativePath === 'io/socket') {
                 return false;
             }
-            spinner.start(`Loading eventHandlers: ${colors.cyan(bindingName)}`);
         },
         onFinish: async (
             _bindingName: string,
@@ -554,6 +559,7 @@ await loadAllEventHandlers(
         ): Promise<void> => {
             if (error) {
                 spinner.error(error.message);
+                return;
             }
             spinner.success();
         },

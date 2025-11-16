@@ -240,10 +240,12 @@ function startPeriodicTrackUpdates(): void {
     if (!settings.features.web.enabled) {
         return;
     }
+    spinner.start(`Starting ${colors.cyan('periodic track updates')}`);
     setInterval(
         (): boolean => discordClient.emit('timer'),
         TRACK_UPDATE_INTERVAL,
     );
+    spinner.success();
 }
 
 const io = createIoServer();
@@ -566,6 +568,4 @@ spinner.start(`Logging in to ${colors.cyan('Discord')}`);
 await discordClient.login(settings.token);
 spinner.success();
 
-spinner.start(`Starting ${colors.cyan('periodic track updates')}`);
 startPeriodicTrackUpdates();
-spinner.success();

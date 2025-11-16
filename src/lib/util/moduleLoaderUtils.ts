@@ -530,7 +530,7 @@ export async function loadAllEventHandlers(
                         await callbacks.onFinish(
                             bindingName,
                             relativePath,
-                            new Error(`${relativePath} canceled`),
+                            new Error(`Path canceled: ${relativePath}`),
                         );
                     }
                     continue;
@@ -541,7 +541,7 @@ export async function loadAllEventHandlers(
                     await callbacks.onFinish(
                         bindingName,
                         relativePath,
-                        new Error(`${relativePath} no sub binding`),
+                        new Error(`Path has no sub-binding: ${relativePath}`),
                     );
                 }
                 continue;
@@ -576,7 +576,7 @@ export async function loadAllEventHandlers(
                     await callbacks.onFinish(
                         bindingName,
                         bindingName,
-                        new Error(`${bindingName} canceled`),
+                        new Error(`Path canceled: ${bindingName}`),
                     );
                 }
                 continue;
@@ -587,7 +587,7 @@ export async function loadAllEventHandlers(
                 await callbacks.onFinish(
                     bindingName,
                     bindingName,
-                    new Error(`No ${bindingName} binding`),
+                    new Error(`Path has no binding: ${bindingName}`),
                 );
             }
             continue;
